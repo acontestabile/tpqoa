@@ -363,9 +363,13 @@ class tpqoa(object):
                             return msgs
                         break
             if self.stop_stream:
+                self.stop_stream = False
                 if ret:
                     return msgs
                 break
+
+    def stop_stream(self):
+        self.stop_stream = True
 
     def _stream_data_failsafe_thread(self, args):
         try:
