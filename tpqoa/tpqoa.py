@@ -134,7 +134,7 @@ class tpqoa(object):
         )
 
         self.suffix = '.000000000Z'
-        self.stop_stream = False
+        self.stop_stream_flag = False
 
     def get_instruments(self):
         ''' Retrieves and returns all instruments for the given account. '''
@@ -164,7 +164,14 @@ class tpqoa(object):
             instrument=instrument,
             fromTime=start, toTime=end,
             granularity=granularity, price=price)
-        raw = raw.get('candles')
+        try:
+            raw = raw.get('candles')
+        except BaseException as e:
+            try:
+                message = raw.get("errorMessage")
+            except BaseException:
+                message = "cannot get detailed error message. " + str(e)
+            raise ValueError(f"Could not download data from provider: {message}")
         raw = [cs.dict() for cs in raw]
         if price == 'A':
             for cs in raw:
@@ -215,7 +222,7 @@ class tpqoa(object):
             multiplier = float("".join(filter(str.isdigit, granularity)))
             if granularity.startswith('S'):
                 # freq = '1h'
-                freq = f"{int(MAX_REQUEST_COUNT * multiplier / float(3600))}H"
+                freq = f"{int(MAX_REQUEST_COUNT * multiplier / float(3600))}h"
             else:
                 # freq = 'D'
                 freq = f"{int(MAX_REQUEST_COUNT * multiplier / float(1440))}D"
@@ -240,6 +247,8 @@ class tpqoa(object):
         if localize:
             data.index = data.index.tz_localize(None)
 
+        if data is None or data.empty:
+            return pd.DataFrame(data=None, columns=["o", "h", "l", "c", "volume", "complete"])
         return data[['o', 'h', 'l', 'c', 'volume', 'complete']]
 
     def create_order(self, instrument, units, price=None, sl_distance=None,
@@ -337,6 +346,7 @@ class tpqoa(object):
         instrument: string
             valid instrument name
         '''
+        self.stop_stream_flag = False
         self.stream_instrument = instrument
         self.ticks = 0
         response = self.ctx_stream.pricing.stream(
@@ -362,10 +372,13 @@ class tpqoa(object):
                         if ret:
                             return msgs
                         break
-            if self.stop_stream:
+            if self.stop_stream_flag:
                 if ret:
                     return msgs
                 break
+
+    def stop_stream(self):
+        self.stop_stream_flag = True
 
     def _stream_data_failsafe_thread(self, args):
         try:
